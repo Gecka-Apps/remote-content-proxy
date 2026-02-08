@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    env:
+      VERSION: ${{ github.ref_name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: curl, dom, fileinfo, libxml, mbstring, openssl, pdo_sqlite, sqlite3
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run tests
+        run: vendor/bin/pest --ci
+        env:
+          APP_KEY: base64:dGVzdGluZ2tleWZvcmNpMTIzNDU2Nzg5MDEyMzQ1Ng==
+
+      - name: Install production dependencies
+        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Stamp the version the health endpoint reports
+        run: composer config version "$VERSION"
+
+      - name: Create release tarball
+        run: |
+          tar czf "/tmp/remote-content-proxy-$VERSION.tar.gz" \
+            --transform 's,^\./,remote-content-proxy/,;s,^\.$,remote-content-proxy,' \
+            --exclude='.github' \
+            --exclude='.git' \
+            --exclude='.gitattributes' \
+            --exclude='.gitignore' \
+            --exclude='.editorconfig' \
+            --exclude='tests' \
+            --exclude='phpunit.xml' \
+            --exclude='.phpunit.result.cache' \
+            --exclude='pint.json' \
+            --exclude='.env' \
+            --exclude='database/database.sqlite' \
+            --exclude='storage/app/proxy-cache' \
+            --exclude='storage/logs/*.log' \
+            --exclude='storage/framework/cache/data/*' \
+            --exclude='storage/framework/sessions/*' \
+            --exclude='storage/framework/views/*' \
+            .
+          mv "/tmp/remote-content-proxy-$VERSION.tar.gz" .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: remote-content-proxy-${{ env.VERSION }}.tar.gz
+          generate_release_notes: true
